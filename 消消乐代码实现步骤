@@ -1,0 +1,276 @@
+1.定义一个宝石脚本,功能:随机指定宝石类型,指定宝石位置,iTween动画,销毁,颜色
+using UnityEngine;
+using System.Collections;
+
+public class Gemstone : MonoBehaviour {
+public float xOffset = -4.0f;  //x方向的偏移
+public float yOffset = -1.5f;  //y方向的偏移
+public int rowIndex = 0;       //行号
+public int columnIndex = 0;    //列号
+
+public GameObject[] gemstoneBgs;  //宝石(gemstone)的数组
+public int gemstoneType;  //宝石(gemstone)的类型
+public GameController gameController;
+public SpriteRenderer spriteRenderer;
+public bool isSelected{
+set{
+if(value){
+spriteRenderer.color = Color.red;
+}else{
+spriteRenderer.color = Color.white;
+}
+}
+}
+
+
+private GameObject gemstoneBg;
+// Use this for initialization
+void Awake(){
+
+}
+
+void Start () {
+gameController = GameObject.Find ("GameController").GetComponent<GameController> ();
+spriteRenderer = gemstoneBg.GetComponent<SpriteRenderer> ();
+}
+
+// Update is called once per frame
+void Update () {
+
+}
+
+public void UpdatePosition(int _rowIndex,int _columnIndex){    //调整gemstone(宝石）的位置
+rowIndex = _rowIndex;
+columnIndex = _columnIndex;
+this.transform.position = new Vector3 (columnIndex*1.2f + xOffset, rowIndex*1.2f + yOffset, 0);
+}
+
+public void TweenToPostion(int _rowIndex,int _columnIndex){
+rowIndex = _rowIndex;
+columnIndex = _columnIndex;
+iTween.MoveTo (this.gameObject, iTween.Hash ("x",columnIndex * 1.2f + xOffset,"y",rowIndex*1.2f + yOffset,"time",0.3f));
+}
+
+public void RandomCreateGemstoneBg(){ //生成随机的宝石类型
+if (gemstoneBg != null)
+return;
+gemstoneType = Random.Range (0, gemstoneBgs.Length);
+gemstoneBg = Instantiate(gemstoneBgs[gemstoneType]) as GameObject;
+gemstoneBg.transform.parent = this.transform;
+}
+        //鼠标点击的回调方法
+public void OnMouseDown(){
+gameController.Select (this);
+}
+
+public void Dispose(){
+Destroy (this.gameObject);
+Destroy (gemstoneBg.gameObject);
+gameController = null;
+}
+}
+脚本挂在到一个空的预制体上,所有类型的宝石这个空物体生成,
+
+将所有的宝石预制体拖到集合目录下
+
+2.定义管理脚本
+
+声明一下字段:
+
+Start里面初始化;
+声明如下代码：
+
+/// <summary>
+/// 生成宝石的方法
+/// </summary>
+/// <returns>返回一个定义好的宝石.</returns>
+/// <param name="rowIndex">Row 行坐标.</param>
+/// <param name="columnIndex">Column 列坐标.</param>
+public Gemstone AddGemstone(int rowIndex,int columnIndex){  //生成宝石
+//克隆一个宝石
+Gemstone c = Instantiate (gemstone) as Gemstone;
+c.transform.parent = this.transform;//指定父物体
+c.GetComponent<Gemstone>().RandomCreateGemstoneBg();//调用宝石本身上宝石脚本的随机指定宝石类型的方法
+c.GetComponent<Gemstone>().UpdatePosition (rowIndex,columnIndex);//调用借用行号和列号自动排列(指定位置)的方法
+return c;
+}
+
+/// <summary>
+/// 查找行号和列好对应宝石的方法
+/// </summary>
+/// <returns>The gemstone.</returns>
+/// <param name="rowIndex">Row index.</param>
+/// <param name="columnIndex">Column index.</param>
+public Gemstone GetGemstone(int rowIndex,int columnIndex){    //通过行号和列号，取得所对应位置的宝石
+ArrayList temp = gemstoneList [rowIndex] as ArrayList;
+Gemstone c = temp [columnIndex] as Gemstone;
+return c;
+}
+
+public void SetGemstone(int rowIndex,int columnIndex, Gemstone c){  //设置所对应列号和列号位置的宝石
+ArrayList temp = gemstoneList [rowIndex] as ArrayList;
+temp [columnIndex] = c;
+}
+
+//点选当前宝石的时候,指定当前宝石的color,如果当前宝石为空时,表示是第一次点选,那么颜色指定为红色,如果不为空的话,表示是第二点选(即交换的对象)
+public void Select(Gemstone c){
+//Destroy (c.gameObject);   //测试，让所点击的物体消失
+
+if (currentGemstone == null) {
+currentGemstone = c;
+currentGemstone.isSelected = true;
+return;
+}else{
+if( Mathf.Abs(currentGemstone.rowIndex - c.rowIndex) + Mathf.Abs(currentGemstone.columnIndex - c.columnIndex) == 1 ){//判断是否挨着的
+
+StartCoroutine (ExangeAndMatches(currentGemstone,c));//开启协程,实现宝石交换并且检测是否匹配
+}else{
+GetComponent<AudioSource>().PlayOneShot(errorClip);
+}
+
+
+currentGemstone.isSelected = false;
+currentGemstone = null;
+}
+}
+
+IEnumerator ExangeAndMatches(Gemstone c1,Gemstone c2){  //实现宝石交换并且检测是否匹配
+Exchange(c1,c2);//调用交换宝石的方法
+yield return new WaitForSeconds (0.5f);//等待0.5s
+
+if(CheckHorizontalMatches() || CheckVerticalMatches() ){//经过水平检测和垂直检测后,如若有成功匹配的
+RemoveMatches();//执行删除宝石的方法
+}
+else{//如果没有匹配的宝石,直接在交换回来
+//Debug.Log ("没有检测到相同的宝石，交换回来！！");
+Exchange(c1,c2);
+}
+}
+ /// <summary>
+ /// 水平检测的方法,返回一个布尔值
+ /// </summary>
+ /// <returns><c>true</c>, if horizontal matches was checked, <c>false</c> otherwise.</returns>
+bool CheckHorizontalMatches(){   //实现检测水平方向的匹配
+bool isMatches = false;
+//遍历列表中的所有宝石
+for (int rowIndex = 0; rowIndex < rowNum; rowIndex++) {
+for(int columnIndex =0; columnIndex < columnNum - 2; columnIndex++){
+//判断相同行挨着的宝石的类型
+if((GetGemstone (rowIndex,columnIndex).gemstoneType == GetGemstone (rowIndex,columnIndex + 1).gemstoneType ) && (GetGemstone (rowIndex,columnIndex).gemstoneType == GetGemstone (rowIndex,columnIndex + 2).gemstoneType )){
+//Debug.Log ("发现行相同的宝石");
+//将三联的宝石放到三联数组里面
+AddMatches (GetGemstone (rowIndex,columnIndex));
+AddMatches (GetGemstone (rowIndex,columnIndex + 1));
+AddMatches (GetGemstone (rowIndex,columnIndex + 2));
+isMatches = true;
+}
+}
+}
+return isMatches;
+
+}
+/// <summary>
+/// 垂直检测的方法,同事也会返回一个布尔值
+/// </summary>
+/// <returns><c>true</c>, if vertical matches was checked, <c>false</c> otherwise.</returns>
+bool CheckVerticalMatches(){   //实现检测垂直方向的匹配
+bool isMatches = false;
+//遍历所有宝石
+for(int columnIndex = 0; columnIndex < columnNum; columnIndex++){
+for(int rowIndex = 0; rowIndex < rowNum -2 ;rowIndex++){
+//判断相同列挨着的宝石的类型
+if((GetGemstone(rowIndex,columnIndex).gemstoneType == GetGemstone (rowIndex + 1,columnIndex).gemstoneType ) & (GetGemstone(rowIndex,columnIndex).gemstoneType == GetGemstone (rowIndex + 2,columnIndex).gemstoneType )  ){
+//Debug.Log ("发现列相同的宝石");
+//将三联的宝石放到三联列表里
+AddMatches (GetGemstone (rowIndex,columnIndex));
+AddMatches (GetGemstone (rowIndex +1,columnIndex));
+AddMatches (GetGemstone (rowIndex +2,columnIndex));
+isMatches = true;
+}
+}
+
+}
+
+return isMatches;
+}
+
+void AddMatches(Gemstone c){
+if(matchesGemstone == null)
+matchesGemstone = new ArrayList();
+int index = matchesGemstone.IndexOf (c);  //检测该宝石是否已在数组当中
+if(index == -1){//如果没有在三联列表里,添加进去
+matchesGemstone.Add (c);
+}
+}
+
+/// <summary>
+/// 删除三联的宝石
+/// </summary>
+void RemoveMatches(){    //删除匹配的宝石
+for(int i=0; i< matchesGemstone.Count; i++){//遍历三联的列表
+Gemstone c = matchesGemstone[i] as Gemstone;
+RemoveGemstone(c);//调用删除宝石的方法
+}
+matchesGemstone = new ArrayList ();//重新更新三联列表
+StartCoroutine (WaitForCheckMatchesAgain ());//开启携程,检测是否还有因为销毁三联宝石以后还有自动匹配的三联宝石,如果有直接销毁
+}
+
+IEnumerator WaitForCheckMatchesAgain(){
+yield return new WaitForSeconds (0.5f);
+if (CheckHorizontalMatches () || CheckVerticalMatches ()) {
+RemoveMatches ();
+}
+}
+
+
+void RemoveGemstone(Gemstone c){  //删除宝石
+//Debug.Log ("删除宝石！");
+c.Dispose ();
+GetComponent<AudioSource>().PlayOneShot (match3Clip);
+for (int i=c.rowIndex +1; i<rowNum; i++) {//更新销毁宝石对应列上方宝石的位置,下滑的动画
+Gemstone temGemstone = GetGemstone (i,c.columnIndex);
+temGemstone.rowIndex --;
+SetGemstone(temGemstone.rowIndex,temGemstone.columnIndex,temGemstone);
+//temGemstone.UpdatePosition (temGemstone.rowIndex,temGemstone.columnIndex);
+temGemstone.TweenToPostion (temGemstone.rowIndex,temGemstone.columnIndex);
+}
+
+Gemstone newGemstone = AddGemstone (rowNum, c.columnIndex);//在空缺的位置添加宝石
+newGemstone.rowIndex--;
+SetGemstone (newGemstone.rowIndex, newGemstone.columnIndex, newGemstone);
+//newGemstone.UpdatePosition (newGemstone.rowIndex, newGemstone.columnIndex);
+newGemstone.TweenToPostion (newGemstone.rowIndex, newGemstone.columnIndex);
+}
+
+/// <summary>
+/// 交换宝石的方法
+/// </summary>
+/// <param name="c1">C1.</param>
+/// <param name="c2">C2.</param>
+public void Exchange(Gemstone c1,Gemstone c2){  //实现宝石之间交换位置
+GetComponent<AudioSource>().PlayOneShot (swapClip);  //播放交换的声音
+SetGemstone (c1.rowIndex, c1.columnIndex, c2);
+SetGemstone (c2.rowIndex, c2.columnIndex, c1);
+
+//交换c1,c2的行号
+int tempRowIndex;
+tempRowIndex = c1.rowIndex;
+c1.rowIndex = c2.rowIndex;
+c2.rowIndex = tempRowIndex;
+
+//交换c1,c2的列号
+int tempColumnIndex;
+tempColumnIndex = c1.columnIndex;
+c1.columnIndex = c2.columnIndex;
+c2.columnIndex = tempColumnIndex;
+
+//c1.UpdatePosition (c1.rowIndex, c1.columnIndex);
+//c2.UpdatePosition (c2.rowIndex, c2.columnIndex);
+//ITween动画将两个宝石移动到指定的行号和列号的位置上
+c1.TweenToPostion (c1.rowIndex, c1.columnIndex);
+c2.TweenToPostion (c2.rowIndex, c2.columnIndex);
+
+}
+
+
+}
